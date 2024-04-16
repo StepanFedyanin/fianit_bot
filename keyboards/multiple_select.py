@@ -4,7 +4,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 items = {
     False: "✅ ",
-    True: "🟩 "
+    True: ""
 }
 
 
@@ -43,8 +43,8 @@ def change_multiple_select(keyboard: InlineKeyboardMarkup, key: int, condition: 
         if line[0].callback_data.split('|')[1] == str(key):
             new_keyboard.row(
                 InlineKeyboardButton(
-                    text=items[condition] + line[0].text,
-                    callback_data=f"choose_topic|{key}|{new_str_condition}")
+                    text= items[condition] + line[0].text if not condition else line[0].text[2:],
+                    callback_data=f"choose_multiple|{key}|{new_str_condition}")
             )
         else:
             new_keyboard.row(line[0])

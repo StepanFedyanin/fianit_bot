@@ -32,7 +32,7 @@ async def start(message: types.Message):
         if k:
             await message.answer('Вы уже проходили викторину!')
         else:
-            usersList.append((User(message['from'].id, message['from'].first_name, 0, 0, [], datetime.now())))
+            usersList.append((User(message['from'].id, message['from'].first_name, 0, 0, 0, [], datetime.now())))
             data = get_question_message(user_id, message)
             await message.answer(data['question_name'], reply_markup=keyboards.multiple_select(data['question_type'], data['answers']))
     else:
@@ -114,15 +114,17 @@ async def choose_single(call: types.CallbackQuery, state: FSMContext):
             text_answer = f'{line[0].text}\n'
 
     await call.message.edit_text(f"{call.message.text} \n \n Ваш ответ:\n {text_answer}")
+    right_answers = get_question_correct(call['from'].id)
     data = get_question_message(call['from'].id, call.message)
+    print(right_answers)
+    for index, i in enumerate(usersList):
+        if i.id == call['from'].id:
+            if int(key) in right_answers:
+                updated_user = User(i.id, i.name, i.score + 1, i.answers_id, i.answers_id_prev, [*i.answers_list],
+                                    i.date)
+                usersList[index] = updated_user
     if data['is_end'] == False:
         await call.message.answer(data['question_name'],reply_markup=keyboards.multiple_select(data['question_type'], data['answers']))
-        right_answers = data['right_answers']
-        for index,i in enumerate(usersList):
-            if i.id == call['from'].id:
-                if int(key) in right_answers:
-                    updated_user = User(i.id, i.name, i.score + 1, i.id, [*i.answers_list],i.date)
-                    usersList[index] = updated_user
     else:
         for i in usersList:
             if i.id == call['from'].id:
@@ -131,14 +133,16 @@ async def choose_single(call: types.CallbackQuery, state: FSMContext):
                 cursor = conn.cursor()
                 cursor.execute ("INSERT OR IGNORE INTO users (user_id, name, score, date) VALUES (?, ?, ?, ?)", (i.id, i.name, i.score, seconds))
                 conn.commit()
+                await call.message.answer(f'Ваш результат: {i.score} правильных из {len(questions)} вопросов. Время прохождения: {seconds//60} мин. {seconds%60} сек.')
+
 
 @dp.callback_query_handler(Text("choose_topic_ready"))
 async def selected_topics(call: types.CallbackQuery):
     data = get_question_message(call['from'].id, call.message)
-    right_answers = data['right_answers']
+    right_answers = get_question_correct(call['from'].id)
     for index, i in enumerate(usersList):
         if i.id == call['from'].id:
-            key_cond = {}
+            key_cond = []
             text_answer = ''
             for line in call.message.reply_markup.inline_keyboard:
                 if line[0].callback_data == "choose_topic_ready":
@@ -147,22 +151,20 @@ async def selected_topics(call: types.CallbackQuery):
                 if cond == 'true':
                     key_cond = [*key_cond, int(key)]
                     text_answer = text_answer + line[0].text[1:] + '\n'
-            await call.message.edit_text(f"{call.message.text} \n \nВаш ответ:\n{text_answer}")
             if right_answers == key_cond:
-                updated_user = User(i.id, i.name, i.score + 1, i.id, [*i.answers_list], i.date)
+                updated_user = User(i.id, i.name, i.score + 1,i.answers_id, i.answers_id_prev, [*i.answers_list], i.date)
                 usersList[index] = updated_user
-            print(i.score)
+            await call.message.edit_text(f"{call.message.text} \n \nВаш ответ:\n{text_answer}")
     if data['is_end'] == False:
         await call.message.answer(data['question_name'], reply_markup=keyboards.multiple_select(data['question_type'], data['answers']))
     else:
-        print(data)
-    #     for i in usersList:
-    #         if i.id == call['from'].id:
-    #             seconds = (datetime.now() - i.date).total_seconds()
-    #             conn = sqlite3.connect('fianit_quiz.db')
-    #             cursor = conn.cursor()
-    #             cursor.execute ("INSERT OR IGNORE INTO users (user_id, name, score, date) VALUES (?, ?, ?, ?)", (i.id, i.name, i.score, seconds))
-    #             conn.commit()
-    #             await call.message.answer(f'Ваш результат: {i.score} правильных из {len(questions)} вопросов. Время прохождения: {seconds//60} мин. {seconds%60} сек.')
+        for i in usersList:
+            if i.id == call['from'].id:
+                seconds = round((datetime.now() - i.date).total_seconds())
+                conn = sqlite3.connect('fianit_quiz.db')
+                cursor = conn.cursor()
+                cursor.execute ("INSERT OR IGNORE INTO users (user_id, name, score, date) VALUES (?, ?, ?, ?)", (i.id, i.name, i.score, seconds))
+                conn.commit()
+                await call.message.answer(f'Ваш результат: {i.score} правильных из {len(questions)} вопросов. Время прохождения: {seconds//60} мин. {seconds%60} сек.')
 
 
