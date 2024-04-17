@@ -1,5 +1,9 @@
+import math
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 from config.data import usersList, questions
-from config.setting import working_date, working_date_start, working_date_end
+from config.setting import working_date, working_date_start, working_date_end, pagination_limit, date_str
 from config.data import User
 from aiogram import types
 from aiogram.dispatcher import FSMContext
@@ -7,6 +11,7 @@ from aiogram.dispatcher.filters import Command, Regexp
 from datetime import datetime, time
 import keyboards
 from config import dp, bot
+from proj.scores import get_scores_text
 from proj.topics import get_question_message, get_question_correct
 from aiogram.dispatcher.filters import Text
 import random
@@ -14,87 +19,308 @@ import sqlite3
 
 conn = sqlite3.connect('fianit_quiz.db')
 cursor = conn.cursor()
-cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id TEXT PRIMARY KEY, name TEXT, score INTEGER, date INTEGER)")
+cursor.execute(
+    "CREATE TABLE IF NOT EXISTS users (user_id TEXT PRIMARY KEY, name TEXT, score INTEGER, date INTEGER, finish_second INTEGER, offset INT)")
 conn.commit()
-    
-@dp.message_handler(Command("start_quiz"))
+
+@dp.message_handler(Command("start"))
 async def start(message: types.Message):
+    user_id = message['from'].id
+    conn = sqlite3.connect('fianit_quiz.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    k = cursor.fetchone()
+    if not k:
+        cursor.execute(
+            "INSERT OR IGNORE INTO users (user_id, name, score, date, finish_second, offset) VALUES (?, ?, ?, ?, ?, ?)",
+            (message['from'].id, message['from'].first_name, 0, '', 0, 0))
+    conn.commit()
+    usersList.append((User(message['from'].id, message['from'].first_name, 0, 0, 0, [], datetime.now(), 0, 1)))
+    await message.answer('Какая-то инструкция')
+
+
+@dp.message_handler(Command("start_quiz"))
+async def start_quiz(message: types.Message):
     current_date = datetime.now()
     current_time = current_date.time()
     start_time = time.fromisoformat(working_date_start)
     end_time = time.fromisoformat(working_date_end)
-    if working_date == working_date and start_time <= current_time <= end_time:
+    is_already = True
+    for i in usersList:
+        if i.id == message['from'].id:
+            if len(i.answers_list) != 0:
+                is_already = False
+                break
+
+
+    if working_date == working_date and start_time <= current_time <= end_time and is_already:
         user_id = message['from'].id
         conn = sqlite3.connect('fianit_quiz.db')
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         k = cursor.fetchone()
-        if k:
-            await message.answer('Вы уже проходили викторину!')
+        new_keyboard = InlineKeyboardMarkup()
+        new_keyboard.row(
+            InlineKeyboardButton(
+                text="Таблица лидеров",
+                callback_data="scores_callback"
+            )
+        )
+        if k[4] != 0:
+            await message.answer('Пройти викторину по правилам можно только 1 раз.',reply_markup=new_keyboard)
         else:
-            usersList.append((User(message['from'].id, message['from'].first_name, 0, 0, 0, [], datetime.now())))
+            object_found = False
+            for obj in usersList:
+                if obj.id == user_id:
+                    object_found = True
+                    break
+            if object_found == False:
+                usersList.append((User(message['from'].id, message['from'].first_name, 0, 0, 0, [], datetime.now(), 0, 0)))
+
             data = get_question_message(user_id, message)
-            await message.answer(data['question_name'], reply_markup=keyboards.multiple_select(data['question_type'], data['answers']))
+            if data['is_end'] == False:
+                await message.answer(data['question_name'],
+                                     reply_markup=keyboards.multiple_select(data['question_type'], data['answers']))
+            else:
+                for i in usersList:
+                    if i.id == user_id:
+                        seconds = round((datetime.now() - i.date).total_seconds())
+                        conn = sqlite3.connect('fianit_quiz.db')
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "REPLACE INTO users (user_id, name, score, date, finish_second, offset) VALUES (?, ?, ?, ?, ?, ?)",
+                            (i.id, i.name, i.score, i.date, seconds, i.pagination_offset))
+                        conn.commit()
+                        if data['not_have_time'] == True:
+                            await message.answer(f'Время на прохождение викторины истекло.')
+                        new_keyboard = InlineKeyboardMarkup()
+                        new_keyboard.row(
+                            InlineKeyboardButton(
+                                text="Таблица лидеров",
+                                callback_data=f"scores_callback"
+                            )
+                        )
+                        await message.answer(
+                            f'Ваш результат: {i.score} правильных из {len(questions)} вопросов. Время прохождения: {seconds // 60} мин. {seconds % 60} сек.',reply_markup=new_keyboard)
+                        break
     else:
-        if current_date.replace(hour=0, minute=0, second=0, microsecond=0) > working_date:
-            await message.answer('Виктарина уже закончилась')
+        data = date_str[0:6]+date_str[8:]
+        if is_already == False:
+            await message.answer('Вы уже начали проходить викторину')
+        elif current_date.replace(hour=0, minute=0, second=0, microsecond=0) > working_date:
+            new_keyboard = InlineKeyboardMarkup()
+            new_keyboard.row(
+                InlineKeyboardButton(
+                    text="Таблица лидеров",
+                    callback_data=f"scores_callback"
+                )
+            )
+            await message.answer('Викторина завершена. Вы можете посмотреть таблицу лидеров.',reply_markup=new_keyboard)
         elif current_date.replace(hour=0, minute=0, second=0, microsecond=0) < working_date:
-            await message.answer('Виктарина начнется в будушем')
+            await message.answer(f'Время проведения викторины с {data +" " + working_date_start} до {data+" "+working_date_end}')
         else:
-            await message.answer('Совсем скоро начнется')
-    
+            print(current_time)
+            await message.answer(f'Время проведения викторины с {data +" " + working_date_start} до {data+" "+working_date_end}')
+
+
+
+
 @dp.message_handler(Command("scores"))
 async def scores(message: types.Message):
     conn = sqlite3.connect('fianit_quiz.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users ORDER BY score DESC")
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (message['from'].id,))
+    k = cursor.fetchone()
+    cursor.execute(
+        f"SELECT * FROM users ORDER BY score DESC, date ASC")
+    scores_all = cursor.fetchall()
+    position = 0
+    for i in range(len(scores_all)):
+        if int(scores_all[i][0]) == message.from_id:
+            position = i + 1
+            break
+    cursor.execute(
+        f"SELECT * FROM users ORDER BY score DESC, date ASC LIMIT {pagination_limit} OFFSET {pagination_limit * k[5] if k[5]!=0 else k[5]}")
     scores = cursor.fetchall()
     conn.commit()
-    position = 0
-    users = ['Таблица лидеров🏆 ']
-    for i in range(len(scores)):
-        if int(scores[i][0]) == message.from_id:
-            position = i+1
+    text = get_scores_text(scores_all, scores, message.from_id, len(scores_all), position)
+    new_keyboard = InlineKeyboardMarkup()
+    for i in scores_all:
+        if int(i[0]) == message['from'].id:
+            print(i[5] - 1,i[5] - 1 > 0)
+            if i[5] - 1 >= 0:
+                new_keyboard.row(
+                    InlineKeyboardButton(
+                        text="Назад",
+                        callback_data=f"scores_prev"
+                    )
+                )
+            if (int(i[5]) + 1) * pagination_limit < len(scores_all):
+                new_keyboard.row(
+                    InlineKeyboardButton(
+                        text="Вперед",
+                        callback_data=f"scores_next"
+                    )
+                )
+    text = f'{text}\n\n{pagination_limit} - {k[5] + 1}/{math.ceil(len(scores_all) / pagination_limit)}'
+    await message.answer(text, reply_markup=new_keyboard)
 
-        if i == 0:
-            if scores[i][3] > 60:
-                users.append(
-                    f"🥇{scores[i][1]}|Ответов {scores[i][2]}/{len(questions)}|Время {(scores[i][3])//60} мин. и {scores[i][3]} сек. "
-                )  
+@dp.callback_query_handler(Regexp(r'scores_callback'))
+async def scores_callback(call: types.CallbackQuery, state: FSMContext):
+    print('сработала scores_callback')
+    conn = sqlite3.connect('fianit_quiz.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (call['from'].id,))
+    k = cursor.fetchone()
+    cursor.execute(
+        f"SELECT * FROM users ORDER BY score DESC, date ASC")
+    scores_all = cursor.fetchall()
+    position = 0
+    for i in range(len(scores_all)):
+        if int(scores_all[i][0]) == call['from'].id:
+            position = i + 1
+            break
+    cursor.execute(
+        f"SELECT * FROM users ORDER BY score DESC, date ASC LIMIT {pagination_limit} OFFSET {pagination_limit * k[5] if k[5]!=0 else k[5]}")
+    scores = cursor.fetchall()
+    conn.commit()
+    text = get_scores_text(scores_all, scores, call['from'].id, len(scores_all), position)
+    new_keyboard = InlineKeyboardMarkup()
+    for index, i in enumerate(scores):
+        if int(scores[index][0]) == call['from'].id:
+            if scores[index][5] - 1 > 0:
+                new_keyboard.row(
+                    InlineKeyboardButton(
+                        text="Назад",
+                        callback_data=f"scores_prev"
+                    )
+                )
+            if (scores[index][5] + 1) * pagination_limit < len(scores_all):
+                new_keyboard.row(
+                    InlineKeyboardButton(
+                        text="Вперед",
+                        callback_data=f"scores_next"
+                    )
+                )
+    text = f'{text}\n\n{pagination_limit} - {k[5] + 1}/{math.ceil(len(scores_all) / pagination_limit)}'
+    await call.message.answer(text, reply_markup=new_keyboard)
+
+@dp.callback_query_handler(Regexp(r'scores_next'))
+async def scores_next(call: types.CallbackQuery, state: FSMContext):
+    print('сработала scores_next')
+    conn = sqlite3.connect('fianit_quiz.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (call['from'].id,))
+    k = cursor.fetchone()
+    cursor.execute(
+        f"SELECT * FROM users ORDER BY score DESC, date ASC")
+    scores = cursor.fetchall()
+    cursor.execute(
+        f"SELECT * FROM users ORDER BY score DESC, date ASC")
+    scores_all = cursor.fetchall()
+    position = 0
+    for i in range(len(scores_all)):
+        if int(scores_all[i][0]) == call['from'].id:
+            position = i + 1
+            break
+
+    for index, i in enumerate(scores):
+        if int(scores[index][0]) == call['from'].id:
+            cursor.execute(
+                f"SELECT * FROM users ORDER BY score DESC, date ASC LIMIT {pagination_limit} OFFSET {pagination_limit * (scores[index][5] + 1) if (scores[index][5] + 1)!=0 else (scores[index][5] + 1)}")
+            scores_list = cursor.fetchall()
+            cursor.execute("REPLACE INTO users (user_id,name, score, date, finish_second,  offset) VALUES (?, ?, ?, ?, ?, ?)",(scores[index][0],scores[index][1],scores[index][2], scores[index][3], scores[index][4], scores[index][5] + 1))
+            conn.commit()
+
+            print(scores_list)
+            # if len(scores_list) !=0:
+
+            text = get_scores_text(scores_all, scores_list, call['from'].id, len(scores_all), position)
+            new_keyboard = InlineKeyboardMarkup()
+            if ((scores[index][5] + 1) * pagination_limit < len(scores_all) - 1):
+                new_keyboard.row(
+                    InlineKeyboardButton(
+                        text="Назад",
+                        callback_data=f"scores_prev"
+                    ),
+                    InlineKeyboardButton(
+                        text="Вперед",
+                        callback_data=f"scores_next"
+                    )
+                )
             else:
-                users.append(
-                    f"🥇{scores[i][1]}|Ответов {scores[i][2]}/{len(questions)}|Время {scores[i][3]} сек. "
-            )  
-        elif i == 1:
-            if scores[i][3] > 60:
-                users.append(
-                    f"🥈{scores[i][1]}|Ответов {scores[i][2]}/{len(questions)}|Время {(scores[i][3])//60} мин. и {scores[i][3]} сек. "
-                )  
+                print('111111')
+                new_keyboard.row(
+                    InlineKeyboardButton(
+                        text="Назад",
+                        callback_data=f"scores_prev"
+                    )
+                )
+            if len(scores_list) != 0:
+                text = f'{text}\n\n{pagination_limit} - {k[5] + 1}/{math.ceil(len(scores_all) / pagination_limit)}'
+                await call.message.edit_text(text)
+                await call.message.edit_reply_markup(reply_markup=new_keyboard)
+
+
+
+@dp.callback_query_handler(Regexp(r'scores_prev'))
+async def scores_prev(call: types.CallbackQuery, state: FSMContext):
+    conn = sqlite3.connect('fianit_quiz.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (call['from'].id,))
+    k = cursor.fetchone()
+    cursor.execute(
+        f"SELECT * FROM users ORDER BY score DESC, date ASC")
+    scores = cursor.fetchall()
+
+    cursor.execute(
+        f"SELECT * FROM users ORDER BY score DESC, date ASC")
+    scores_all = cursor.fetchall()
+    position = 0
+    for i in range(len(scores_all)):
+        if int(scores_all[i][0]) == call['from'].id:
+            position = i + 1
+            break
+
+    scores_list = []
+    for index, i in enumerate(scores):
+        if int(scores[index][0]) == call['from'].id:
+            if scores[index][5] - 1 >= 0:
+                print(pagination_limit * (scores[index][5] - 1))
+                cursor.execute(f"SELECT * FROM users ORDER BY score DESC, date ASC LIMIT {pagination_limit} OFFSET { pagination_limit * (scores[index][5] - 1) if (scores[index][5] - 1)!=0 else (scores[index][5] - 1)}")
+                scores_list = cursor.fetchall()
+                print(scores_list)
+                if len(scores_list) != 0:
+                    cursor.execute(
+                    "REPLACE INTO users (user_id,name, score, date, finish_second,  offset) VALUES (?, ?, ?, ?, ?, ?)",
+                    (scores[index][0], scores[index][1], scores[index][2], scores[index][3], scores[index][4],
+                     scores[index][5] - 1))
+            conn.commit()
+            text = get_scores_text(scores_all, scores_list, call['from'].id, len(scores_all), position)
+            new_keyboard = InlineKeyboardMarkup()
+            if scores[index][5] - 1 > 0:
+                new_keyboard.row(
+                    InlineKeyboardButton(
+                        text="Назад",
+                        callback_data=f"scores_prev"
+                    )
+                )
             else:
-                users.append(
-                    f"🥈{scores[i][1]}|Ответов {scores[i][2]}/{len(questions)}|Время {scores[i][3]} сек. "
-            )
-        elif i == 2:
-            if scores[i][3] > 60:
-                users.append(
-                    
-                    f"🥉{scores[i][1]}|Ответов {scores[i][2]}/{len(questions)}|Время {(scores[i][3])//60} мин. и {scores[i][3]} сек. "
-                )  
-            else:
-                users.append(
-                    f"🥉{scores[i][1]}|Ответов {scores[i][2]}/{len(questions)}|Время {scores[i][3]} сек. "
-            )
-        else:
-            if scores[i][3] > 60:
-                users.append(
-                    
-                    f"🎖️{scores[i][1]}|Ответов {scores[i][2]}/{len(questions)}|Время {(scores[i][3])//60} мин. и {scores[i][3]} сек. "
-                )  
-            else:
-                users.append(
-                    f"🎖️{scores[i][1]}|Ответов {scores[i][2]}/{len(questions)}|Время {scores[i][3]} сек. "
-            )
-    await message.answer(f'Ваше место {position} из {len(scores)} \n'+ '\n' +'\n'.join(users)) 
+                new_keyboard.row(
+                    InlineKeyboardButton(
+                        text="Назад",
+                        callback_data=f"scores_prev"
+                    ),
+                    InlineKeyboardButton(
+                        text="Вперед",
+                        callback_data=f"scores_next"
+                    )
+                )
+            if len(scores_list) != 0:
+                text = f'{text}\n\n{pagination_limit} - {k[5] + 1}/{math.ceil(len(scores_all) / pagination_limit)}'
+                await call.message.edit_text(text)
+                await call.message.edit_reply_markup(reply_markup=new_keyboard)
+            break
 
 
 @dp.callback_query_handler(Regexp(r'choose_multiple\|\d+\|\w{4,5}'))
@@ -105,41 +331,57 @@ async def choose_multiple(call: types.CallbackQuery, state: FSMContext):
     new_keyboard = keyboards.change_multiple_select(keyboard, key, condition)
     await call.message.edit_reply_markup(reply_markup=new_keyboard)
 
+
 @dp.callback_query_handler(Regexp(r'choose_single\|\d+\|\w{4,5}'))
 async def choose_single(call: types.CallbackQuery, state: FSMContext):
     _, key, str_condition = call.data.split("|")
     text_answer = ''
     for line in call.message.reply_markup['inline_keyboard']:
         if line[0].callback_data.split('|')[1] == str(key):
-            text_answer = f'{line[0].text}\n'
+            text_answer = f'➡️ {line[0].text}\n'
 
-    await call.message.edit_text(f"{call.message.text} \n \n Ваш ответ:\n {text_answer}")
+    await call.message.edit_text(f"{call.message.text}\n\nВаш ответ:\n{text_answer}")
     right_answers = get_question_correct(call['from'].id)
     data = get_question_message(call['from'].id, call.message)
-    print(right_answers)
-    for index, i in enumerate(usersList):
-        if i.id == call['from'].id:
-            if int(key) in right_answers:
-                updated_user = User(i.id, i.name, i.score + 1, i.answers_id, i.answers_id_prev, [*i.answers_list],
-                                    i.date)
-                usersList[index] = updated_user
-    if data['is_end'] == False:
-        await call.message.answer(data['question_name'],reply_markup=keyboards.multiple_select(data['question_type'], data['answers']))
+    if data['is_end'] == False and data['not_have_time'] == False:
+        for index, i in enumerate(usersList):
+            if i.id == call['from'].id:
+                if int(key) in right_answers:
+                    updated_user = User(i.id, i.name, i.score + 1, i.answers_id, i.answers_id_prev, [*i.answers_list],
+                                        i.date, i.time_finish, i.pagination_offset)
+                    usersList[index] = updated_user
+                    break
+        await call.message.answer(data['question_name'],
+                                  reply_markup=keyboards.multiple_select(data['question_type'], data['answers']))
     else:
         for i in usersList:
             if i.id == call['from'].id:
-                seconds = (datetime.now() - i.date).total_seconds()
+                print('single i',i)
+                seconds = round((datetime.now() - i.date).total_seconds())
                 conn = sqlite3.connect('fianit_quiz.db')
                 cursor = conn.cursor()
-                cursor.execute ("INSERT OR IGNORE INTO users (user_id, name, score, date) VALUES (?, ?, ?, ?)", (i.id, i.name, i.score, seconds))
+                cursor.execute(
+                    "REPLACE INTO users (user_id, name, score, date, finish_second, offset) VALUES (?, ?, ?, ?, ?, ?)",
+                (i.id, i.name, i.score, i.date,seconds, i.pagination_offset))
                 conn.commit()
-                await call.message.answer(f'Ваш результат: {i.score} правильных из {len(questions)} вопросов. Время прохождения: {seconds//60} мин. {seconds%60} сек.')
+                if data['not_have_time'] == True:
+                    await call.message.answer(f'Время на прохождение викторины истекло.')
+                new_keyboard = InlineKeyboardMarkup()
+                new_keyboard.row(
+                    InlineKeyboardButton(
+                        text="Таблица лидеров",
+                        callback_data=f"scores_callback"
+                    )
+                )
+                await call.message.answer(
+                    f'Ваш результат: {i.score} правильных из {len(questions)} вопросов. Время прохождения: {seconds // 60} мин. {seconds % 60} сек.', reply_markup=new_keyboard)
+                break
 
 
 @dp.callback_query_handler(Text("choose_topic_ready"))
 async def selected_topics(call: types.CallbackQuery):
-    data = get_question_message(call['from'].id, call.message)
     right_answers = get_question_correct(call['from'].id)
+    data = get_question_message(call['from'].id, call.message)
     for index, i in enumerate(usersList):
         if i.id == call['from'].id:
             key_cond = []
@@ -150,21 +392,36 @@ async def selected_topics(call: types.CallbackQuery):
                 _, key, cond = line[0].callback_data.split("|")
                 if cond == 'true':
                     key_cond = [*key_cond, int(key)]
-                    text_answer = text_answer + line[0].text[1:] + '\n'
-            if right_answers == key_cond:
-                updated_user = User(i.id, i.name, i.score + 1,i.answers_id, i.answers_id_prev, [*i.answers_list], i.date)
+                    text_answer = text_answer + '➡️'+  line[0].text[1:] + '\n'
+            if right_answers == key_cond and data['is_end'] == False and data['not_have_time'] == False:
+                updated_user = User(i.id, i.name, i.score + 1, i.answers_id, i.answers_id_prev, [*i.answers_list],
+                                    i.date, i.time_finish, i.pagination_offset)
                 usersList[index] = updated_user
-            await call.message.edit_text(f"{call.message.text} \n \nВаш ответ:\n{text_answer}")
-    if data['is_end'] == False:
-        await call.message.answer(data['question_name'], reply_markup=keyboards.multiple_select(data['question_type'], data['answers']))
+            await call.message.edit_text(f"{call.message.text}\n\nВаш ответ:\n{text_answer}")
+            break
+    if data['is_end'] == False and data['not_have_time'] == False:
+        await call.message.answer(data['question_name'],
+                                  reply_markup=keyboards.multiple_select(data['question_type'], data['answers']))
     else:
         for i in usersList:
             if i.id == call['from'].id:
+                print('multy i',i)
                 seconds = round((datetime.now() - i.date).total_seconds())
                 conn = sqlite3.connect('fianit_quiz.db')
                 cursor = conn.cursor()
-                cursor.execute ("INSERT OR IGNORE INTO users (user_id, name, score, date) VALUES (?, ?, ?, ?)", (i.id, i.name, i.score, seconds))
+                cursor.execute(
+                    "REPLACE INTO users (user_id, name, score, date, finish_second, offset) VALUES (?, ?, ?, ?, ?, ?)",
+                (i.id, i.name, i.score, i.date,seconds, i.pagination_offset))
                 conn.commit()
-                await call.message.answer(f'Ваш результат: {i.score} правильных из {len(questions)} вопросов. Время прохождения: {seconds//60} мин. {seconds%60} сек.')
-
-
+                if data['not_have_time'] == True:
+                    await call.message.answer(f'Время на прохождение викторины истекло.')
+                new_keyboard = InlineKeyboardMarkup()
+                new_keyboard.row(
+                    InlineKeyboardButton(
+                        text="Таблица лидеров",
+                        callback_data=f"scores_callback"
+                    )
+                )
+                await call.message.answer(
+                    f'Ваш результат: {i.score} правильных из {len(questions)} вопросов. Время прохождения: {seconds // 60} мин. {seconds % 60} сек.',reply_markup=new_keyboard)
+                break

@@ -27,7 +27,7 @@ def multiple_select(question_type, answers):
     if question_type == False:
         keyboard.row(
             InlineKeyboardButton(
-                text="Подтвердить выбор",
+                text="➡️ Подтвердить выбор",
                 callback_data="choose_topic_ready"
             )
         )
@@ -51,7 +51,7 @@ def change_multiple_select(keyboard: InlineKeyboardMarkup, key: int, condition: 
 
     new_keyboard.row(
         InlineKeyboardButton(
-            text="Подтвердить выбор",
+            text="➡️ Подтвердить выбор",
             callback_data="choose_topic_ready"
         )
     )
