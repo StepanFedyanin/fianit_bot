@@ -13,7 +13,6 @@ def get_scores_text(scores_all, scores, user_id, count, position):
         for i in range(len(scores)):
             if scores[i][0] == score[0]:
                 seconds = scores[i][4]
-                print(i)
                 icon = position_icon[index] if index in [0, 1, 2] else position_icon[3]
                 users.append(
                     f"{icon}️{scores[i][1]}|Ответов {scores[i][2]}/{len(questions)}|Время {seconds // 60} мин. и {seconds % 60} сек. ")
