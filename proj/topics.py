@@ -21,7 +21,7 @@ def get_question_message(user_id, message):
     if target_date <= current_date <= end_date:
         ids_to_exclude = set([*json.loads(user[8])])
         questionsList = [question for question in [*questions] if question.id not in ids_to_exclude]
-        # random.shuffle(questionsList)
+        random.shuffle(questionsList)
         if len(questionsList) != 0:
             question = questionsList[0]
             cursor.execute(

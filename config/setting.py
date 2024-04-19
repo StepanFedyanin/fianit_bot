@@ -14,4 +14,4 @@ working_date_start = '09:00'
 working_date_end = '23:00'
 time_to_pass = 1800
 
-pagination_limit = 1
+pagination_limit = 10
