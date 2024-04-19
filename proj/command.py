@@ -39,10 +39,12 @@ async def start(message: types.Message):
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
     k = cursor.fetchone()
+    print(message)
+    print(message['from'])
     if not k:
         cursor.execute(
             "INSERT OR IGNORE INTO users (user_id, name, score, date, finish_second, offset, answers_id, answers_id_prev, answers_list) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (message['from'].id, message['from'].first_name, 0, '', 0, 0, 0, 0, '[]'))
+            (message['from'].id, message['from'].first_name, 0, datetime.now(), 0, 0, 0, 0, '[]'))
     conn.commit()
     # cursor.close()
     await message.answer(
@@ -144,16 +146,11 @@ async def scores(message: types.Message):
     user = cursor.fetchone()
     cursor.execute(f"SELECT * FROM users WHERE finish_second > 0 ORDER BY score DESC, date ASC")
     scores_all = cursor.fetchall()
-    position = 0
-    for i in range(len(scores_all)):
-        if int(scores_all[i][0]) == message.from_id:
-            position = i + 1
-            break
     cursor.execute(
         f"SELECT * FROM users WHERE finish_second > 0 ORDER BY score DESC, date ASC LIMIT {pagination_limit} OFFSET {pagination_limit * user[5] if user[5] != 0 else user[5]}")
     scores = cursor.fetchall()
     # cursor.close()
-    text = get_scores_text(scores_all, scores, message.from_id, len(scores_all), position)
+    text = get_scores_text(scores_all, scores, message.from_id, len(scores_all))
     new_keyboard = InlineKeyboardMarkup()
     for i in scores_all:
         if int(i[0]) == message['from'].id and user[5] - 1 > 0 or int(i[0]) == message['from'].id and(int(i[5]) + 1) * pagination_limit < len(scores_all):
@@ -202,16 +199,11 @@ async def scores_callback(call: types.CallbackQuery, state: FSMContext):
     user = cursor.fetchone()
     cursor.execute(f"SELECT * FROM users WHERE finish_second > 0 ORDER BY score DESC, date ASC")
     scores_all = cursor.fetchall()
-    position = 0
-    for i in range(len(scores_all)):
-        if int(scores_all[i][0]) == call.message.from_id:
-            position = i + 1
-            break
     cursor.execute(
         f"SELECT * FROM users WHERE finish_second > 0 ORDER BY score DESC, date ASC LIMIT {pagination_limit} OFFSET {pagination_limit * user[5] if user[5] != 0 else user[5]}")
     scores = cursor.fetchall()
     # cursor.close()
-    text = get_scores_text(scores_all, scores, call.message.from_id, len(scores_all), position)
+    text = get_scores_text(scores_all, scores, call.message.from_id, len(scores_all))
     new_keyboard = InlineKeyboardMarkup()
     for i in scores_all:
         if int(i[0]) == call['from'].id and user[5] - 1 > 0 or int(i[0]) == call['from'].id and(int(i[5]) + 1) * pagination_limit < len(scores_all):
@@ -259,11 +251,6 @@ async def scores_next(call: types.CallbackQuery, state: FSMContext):
     user = cursor.fetchone()
     cursor.execute(f"SELECT * FROM users WHERE finish_second > 0 ORDER BY score DESC, date ASC")
     scores_all = cursor.fetchall()
-    position = 0
-    for i in range(len(scores_all)):
-        if int(scores_all[i][0]) == call['from'].id:
-            position = i + 1
-            break
     cursor.execute(
         f"SELECT * FROM users WHERE finish_second > 0 ORDER BY score DESC, date ASC LIMIT {pagination_limit} OFFSET {pagination_limit * (user[5] + 1) if (user[5] + 1) != 0 else (user[5] + 1)}")
     scores_list = cursor.fetchall()
@@ -271,7 +258,7 @@ async def scores_next(call: types.CallbackQuery, state: FSMContext):
                    (user[0], user[1], user[2], user[3], user[4], user[5] + 1, user[6], user[7], user[8]))
     conn.commit()
     # cursor.close()
-    text = get_scores_text(scores_all, scores_list, call['from'].id, len(scores_all), position)
+    text = get_scores_text(scores_all, scores_list, call['from'].id, len(scores_all))
     new_keyboard = InlineKeyboardMarkup()
     if ((user[5] + 2) * pagination_limit < len(scores_all)):
         new_keyboard.row(

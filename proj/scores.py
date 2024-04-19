@@ -1,17 +1,19 @@
 from config.data import questions
 
 
-def get_scores_text(scores_all, scores, user_id, count, position):
+def get_scores_text(scores_all, scores, user_id, count):
     position_icon = {
         0: '🥇 ',
         1: '🥈 ',
         2: '🥉 ',
         3: '🎖️ '
     }
+    position = 0
     users = ['Таблица лидеров🏆 ']
     for index,score in enumerate(scores_all):
         for i in range(len(scores)):
             if scores[i][0] == score[0]:
+                position = index + 1
                 seconds = scores[i][4]
                 icon = position_icon[index] if index in [0, 1, 2] else position_icon[3]
                 users.append(
