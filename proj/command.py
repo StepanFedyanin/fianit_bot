@@ -114,9 +114,7 @@ async def start_quiz(message: types.Message):
 
     else:
         data = date_str[0:6] + date_str[8:]
-        if current_date.replace(hour=0, minute=0, second=0, microsecond=0) < working_date:
-            await message.answer('Вы уже начали проходить викторину')
-        elif current_date.replace(hour=0, minute=0, second=0, microsecond=0) > working_date:
+        if current_date.replace(hour=0, minute=0, second=0, microsecond=0) <= working_date and end_time <= current_time:
             new_keyboard = InlineKeyboardMarkup()
             new_keyboard.row(
                 InlineKeyboardButton(
@@ -126,9 +124,6 @@ async def start_quiz(message: types.Message):
             )
             await message.answer('Викторина завершена. Вы можете посмотреть таблицу лидеров.',
                                  reply_markup=new_keyboard)
-        elif current_date.replace(hour=0, minute=0, second=0, microsecond=0) < working_date:
-            await message.answer(
-                f'Время проведения викторины с {data + " " + working_date_start} до {data + " " + working_date_end}')
         else:
             await message.answer(
                 f'Время проведения викторины с {data + " " + working_date_start} до {data + " " + working_date_end}')
@@ -258,7 +253,7 @@ async def scores_next(call: types.CallbackQuery, state: FSMContext):
     if not user:
         cursor.execute(
             "INSERT OR IGNORE INTO users (user_id, name, score, date, finish_second, offset, answers_id, answers_id_prev, answers_list) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (call['from'].id, call['from'].first_name, 0, '', 0, 0))
+            (call['from'].id, call['from'].first_name, 0, datetime.now(), 0, 0, 0, 0, '[]'))
         conn.commit()
     cursor.execute("SELECT * FROM users WHERE user_id = ?", (call['from'].id,))
     user = cursor.fetchone()
@@ -310,7 +305,7 @@ async def scores_prev(call: types.CallbackQuery, state: FSMContext):
     if not user:
         cursor.execute(
             "INSERT OR IGNORE INTO users (user_id, name, score, date, finish_second, offset, answers_id, answers_id_prev, answers_list) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (call['from'].id, call['from'].first_name, 0, '', 0, 0))
+            (call['from'].id, call['from'].first_name, 0, datetime.now(), 0, 0, 0, 0, '[]'))
         conn.commit()
     cursor.execute("SELECT * FROM users WHERE user_id = ?", (call['from'].id,))
     user = cursor.fetchone()
