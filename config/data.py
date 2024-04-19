@@ -1,19 +1,5 @@
 import dataclasses
 
-
-@dataclasses.dataclass
-class User:
-    id: int
-    name: str
-    score: int
-    answers_id: int
-    answers_id_prev: int
-    answers_list: list
-    date: int
-    time_finish: str
-    pagination_offset: int
-
-
 @dataclasses.dataclass
 class Question:
     id: int
@@ -29,10 +15,8 @@ class Answer:
     right: bool
 
 
-usersList = {}
-
 questions = [
-    Question(1, "❓ Имитирующий алмаз кристалл, выращенный лабораторным способом?", [
+    Question(31, "❓ Имитирующий алмаз кристалл, выращенный лабораторным способом?", [
         Answer(1, "Фианит", True),
         Answer(2, "Муассанит", False),
         Answer(3, "Циркон", False),

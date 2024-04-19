@@ -35,8 +35,8 @@ def multiple_select(question_type, answers):
 
 
 def change_multiple_select(keyboard: InlineKeyboardMarkup, key: int, condition: bool):
-    new_str_condition = 'true' if not condition else 'false'
     new_keyboard = InlineKeyboardMarkup()
+    str_condition = 'true' if condition == False else 'false'
     for line in keyboard.inline_keyboard:
         if line[0].callback_data == "choose_topic_ready":
             continue
@@ -44,7 +44,7 @@ def change_multiple_select(keyboard: InlineKeyboardMarkup, key: int, condition: 
             new_keyboard.row(
                 InlineKeyboardButton(
                     text= items[condition] + line[0].text if not condition else line[0].text[2:],
-                    callback_data=f"choose_multiple|{key}|{new_str_condition}")
+                    callback_data=f"choose_multiple|{key}|{str_condition}")
             )
         else:
             new_keyboard.row(line[0])
