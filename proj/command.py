@@ -1,3 +1,4 @@
+from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from config.data import questions
@@ -7,7 +8,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Command, Regexp
 from datetime import datetime, time, timedelta
 
-from proj.api import get_user, add_user, replace_user, get_scores
+from proj.api import get_user, add_user, replace_user, get_scores, get_scores_winner
 from proj.multiple_select import multiple_select, change_multiple_select
 from config import dp, bot
 from proj.scores import get_scores_text
@@ -97,6 +98,8 @@ async def start_quiz(message: types.Message):
 
     else:
         data = date_str[0:6] + date_str[8:]
+        print(current_date.replace(hour=0, minute=0, second=0, microsecond=0), working_date)
+        print(end_time, current_time)
         if current_date.replace(hour=0, minute=0, second=0, microsecond=0) <= working_date and end_time <= current_time:
             new_keyboard = InlineKeyboardMarkup()
             new_keyboard.row(
@@ -278,7 +281,7 @@ async def scores_prev(call: types.CallbackQuery, state: FSMContext):
             )
         )
     if len(scores_list) != 0:
-        await call.message.edit_text(text,parse_mode="Markdown")
+        await call.message.edit_text(text, parse_mode="Markdown")
         await call.message.edit_reply_markup(reply_markup=new_keyboard)
 
 
@@ -389,3 +392,49 @@ async def get_all_participant(message: types.Message):
             f"{index + 1}.  ️{user[1]}|Ответов {user[2]}/{len(questions)}|Время {seconds // 60} мин. и {seconds % 60} сек.|\n тел. {user[9]}")
     users_str = '\n'.join(users_list)
     await message.answer(users_str)
+
+
+class UserState(StatesGroup):
+    waiting_for_phone = State()
+
+
+@dp.message_handler(state=UserState.waiting_for_phone)
+async def handle_phone_number(message: types.Message, state: FSMContext):
+    if message.text.isdigit() and len(message.text) == 11:
+        user_id = message.from_user.id
+        user = get_user(user_id)
+        params = (user[0], user[1], user[2], user[3], user[4], user[5], user[6], user[7], user[8], message.text)
+        replace_user(params)
+        await bot.send_message(message.chat.id, "Скоро с вами свяжутся")
+        await state.finish()
+    else:
+        await bot.send_message(message.chat.id, "Неправильный формат номера телефона, попробуйте снова")
+
+
+@dp.callback_query_handler(Regexp(r'already_send_phone'))
+async def already_send_phone(call: types.CallbackQuery, state: FSMContext):
+    text = 'Укажите следующим сообщением свой номер телефона'
+    await call.message.delete()
+    await bot.send_message(chat_id=call['from'].id, text=text)
+    await UserState.waiting_for_phone.set()
+
+
+@dp.message_handler(Command("mailing_to_winners"))
+async def mass_phone_request(message: types.Message, state: FSMContext):
+    users = get_scores_winner(2)
+    text = 'Дорогой участник!\nпоздравляем вас, вы выиграли викторину, для получения подарка требуется ваш контактный телефон\nвведите его форматом 90514788806'
+    new_keyboard = InlineKeyboardMarkup()
+    new_keyboard.row(
+        InlineKeyboardButton(
+            text="Указать номер телефона",
+            callback_data=f"already_send_phone"
+        )
+    )
+    users_list = ['Рассылка была отправленна']
+    for index,user in enumerate(users):
+        if len(user[9]) == 0:
+            seconds = user[4]
+            users_list.append(f"{index + 1}.  ️{user[1]}|Ответов {user[2]}/{len(questions)}|Время {seconds // 60} мин. и {seconds % 60} сек.|\n тел. {user[9]}")
+            await bot.send_message(chat_id=user[0], text=text, reply_markup=new_keyboard)
+    await message.answer('\n'.join(users_list))
+
