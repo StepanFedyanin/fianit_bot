@@ -1,5 +1,4 @@
 from .command import dp
-from .topics import dp
 
 
 __all__ = ["dp"]
