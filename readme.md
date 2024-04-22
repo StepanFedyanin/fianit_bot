@@ -1,12 +1,12 @@
- Запуск:
+Версия Python 3.10 - на другой может быть ошибка с aiogram
+
+Запуск:
  
- git clone https://github.com/borisalekseev/aiogram-multipleselect
+ git clone https://git.flexites.org/fianit/fianit-tgbot-quiz.git
  
- cd aiogram-multipleselect
+ cd fianit-tgbot-quiz
 
  python3 -m venv venv (windows: python -m venv venv)
-
- source venv/bin/activate (windows: venv/bin/activate)
 
  pip install -r requirements.txt
 
