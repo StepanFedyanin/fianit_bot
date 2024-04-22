@@ -2,7 +2,8 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from config.data import questions
-from config.setting import working_date, working_date_start, working_date_end, pagination_limit, date_str, time_to_pass
+from config.setting import working_date, working_date_start, working_date_end, pagination_limit, date_str, time_to_pass, \
+    number_of_winners
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Command, Regexp
@@ -40,7 +41,7 @@ async def start(message: types.Message):
     k = get_user(user_id)
 
     if not k:
-        params = (message['from'].id, message['from'].first_name, 0, datetime.now(), 0, 0, 0, 0, '[]', '')
+        params = (message['from'].id, message['from'].first_name, 0, '', 0, 0, 0, 0, '[]', '')
         add_user(params)
     await message.answer(
         'Правила:\n\n Время проведения викторины - 24 апреля 2024 года с 9:00 до 24:00 по челябинскому времени (МСК +2).\nВикторину можно пройти только один раз!\nВикторина состоит из 30 вопросов.\nВремя на прохождение викторины - 30 минут.\nДля участия в викторине нажмите Меню, затем выберите /start_quiz (Пройти викторину).')
@@ -58,7 +59,10 @@ async def start_quiz(message: types.Message):
     if not user:
         params = (message['from'].id, message['from'].first_name, 0, datetime.now(), 0, 0, 0, 0, '[]', '')
         add_user(params)
-    if working_date == working_date and start_time <= current_time <= end_time:
+    if len(user[3]) < 5:
+        params = (user[0], user[1], user[2], datetime.now(), user[4], user[5], user[6], user[7], user[8], user[9])
+        replace_user(params)
+    if current_date.replace(hour=0, minute=0, second=0, microsecond=0) == working_date and start_time <= current_time <= end_time:
         user = get_user(user_id)
         new_keyboard = InlineKeyboardMarkup()
         new_keyboard.row(
@@ -76,13 +80,13 @@ async def start_quiz(message: types.Message):
                                      reply_markup=multiple_select(data['question_type'], data['answers']))
             else:
                 user = get_user(user_id)
-                seconds = round((datetime.now() - user[3]).total_seconds())
+                seconds = round((datetime.now() - datetime.strptime(user[3], "%Y-%m-%d %H:%M:%S.%f")).total_seconds())
                 if data['not_have_time'] == True:
                     seconds = time_to_pass
                     await message.answer(f'Время на прохождение викторины истекло.')
                     user = get_user(user_id)
 
-                params = (user[0], user[1], user[2], user[3], seconds, user[5], user[6], user[7], user[8])
+                params = (user[0], user[1], user[2], user[3], seconds, user[5], user[6], user[7], user[8], user[9])
                 replace_user(params)
 
                 new_keyboard = InlineKeyboardMarkup()
@@ -98,8 +102,6 @@ async def start_quiz(message: types.Message):
 
     else:
         data = date_str[0:6] + date_str[8:]
-        print(current_date.replace(hour=0, minute=0, second=0, microsecond=0), working_date)
-        print(end_time, current_time)
         if current_date.replace(hour=0, minute=0, second=0, microsecond=0) <= working_date and end_time <= current_time:
             new_keyboard = InlineKeyboardMarkup()
             new_keyboard.row(
@@ -130,7 +132,6 @@ async def scores(message: types.Message):
     new_keyboard = InlineKeyboardMarkup()
     for i in scores_all:
         if int(i[0]) == message['from'].id:
-            print(user[5] - 1 >= 0, user[5])
             if (int(i[5]) + 1) * pagination_limit < len(scores_all) and user[5] - 1 > 0:
                 new_keyboard.row(
                     InlineKeyboardButton(
@@ -212,7 +213,7 @@ async def scores_next(call: types.CallbackQuery, state: FSMContext):
     if not user:
         params = (call['from'].id, call['from'].first_name, 0, datetime.now(), 0, 0, 0, 0, '[]', '')
         add_user(params)
-    params = (user[0], user[1], user[2], user[3], user[4], user[5] + 1, user[6], user[7], user[8])
+    params = (user[0], user[1], user[2], user[3], user[4], user[5] + 1, user[6], user[7], user[8], user[9])
     replace_user(params)
     user = get_user(user_id)
     scores_all = get_scores()
@@ -258,7 +259,7 @@ async def scores_prev(call: types.CallbackQuery, state: FSMContext):
     if user[5] - 1 >= 0:
         scores_list = get_scores(user[5] - 1)
         if len(scores_list) != 0:
-            params = (user[0], user[1], user[2], user[3], user[4], user[5] - 1, user[6], user[7], user[8])
+            params = (user[0], user[1], user[2], user[3], user[4], user[5] - 1, user[6], user[7], user[8], user[9])
             replace_user(params)
     text = get_scores_text(scores_all, scores_list, call['from'].id, len(scores_all))
     new_keyboard = InlineKeyboardMarkup()
@@ -311,7 +312,7 @@ async def choose_single(call: types.CallbackQuery, state: FSMContext):
 
     if data['is_end'] == False and data['not_have_time'] == False:
         if int(key) in right_answers:
-            params = (user[0], user[1], user[2] + 1, user[3], user[4], user[5], user[6], user[7], user[8])
+            params = (user[0], user[1], user[2] + 1, user[3], user[4], user[5], user[6], user[7], user[8], user[9])
             replace_user(params)
         await call.message.answer(data['question_name'],
                                   reply_markup=multiple_select(data['question_type'], data['answers']))
@@ -324,7 +325,7 @@ async def choose_single(call: types.CallbackQuery, state: FSMContext):
         if data['not_have_time'] == True:
             seconds = time_to_pass
             await call.message.answer(f'Время на прохождение викторины истекло.')
-        params = (user[0], user[1], score, user[3], seconds, user[5], user[6], user[7], user[8])
+        params = (user[0], user[1], score, user[3], seconds, user[5], user[6], user[7], user[8], user[9])
         replace_user(params)
 
         new_keyboard = InlineKeyboardMarkup()
@@ -356,7 +357,7 @@ async def selected_topics(call: types.CallbackQuery):
             key_cond = [*key_cond, int(key)]
             text_answer = text_answer + '➡️' + line[0].text[1:] + '\n'
     if right_answers == key_cond and data['is_end'] == False and data['not_have_time'] == False:
-        params = (user[0], user[1], user[2] + 1, user[3], user[4], user[5], user[6], user[7], user[8])
+        params = (user[0], user[1], user[2] + 1, user[3], user[4], user[5], user[6], user[7], user[8], user[9])
         replace_user(params)
 
     await call.message.edit_text(f"{call.message.text}\n\nВаш ответ:\n{text_answer}")
@@ -364,11 +365,11 @@ async def selected_topics(call: types.CallbackQuery):
         await call.message.answer(data['question_name'],
                                   reply_markup=multiple_select(data['question_type'], data['answers']))
     else:
-        seconds = round((datetime.now() - user[3]).total_seconds())
+        seconds = round((datetime.now() - datetime.strptime(user[3], "%Y-%m-%d %H:%M:%S.%f")).total_seconds())
         if data['not_have_time'] == True:
             seconds = time_to_pass
-            await call.message.answer(f'Время на прохождение викторины истекло.')
-        params = (user[0], user[1], user[2], user[3], seconds, user[5], user[6], user[7], user[8])
+            await call.message.answer('Время на прохождение викторины истекло.')
+        params = (user[0], user[1], user[2], user[3], seconds, user[5], user[6], user[7], user[8], user[9])
         replace_user(params)
         new_keyboard = InlineKeyboardMarkup()
         new_keyboard.row(
@@ -421,7 +422,7 @@ async def already_send_phone(call: types.CallbackQuery, state: FSMContext):
 
 @dp.message_handler(Command("mailing_to_winners"))
 async def mass_phone_request(message: types.Message, state: FSMContext):
-    users = get_scores_winner(2)
+    users = get_scores_winner(number_of_winners)
     text = 'Дорогой участник!\nпоздравляем вас, вы выиграли викторину, для получения подарка требуется ваш контактный телефон\nвведите его форматом 90514788806'
     new_keyboard = InlineKeyboardMarkup()
     new_keyboard.row(
@@ -432,9 +433,9 @@ async def mass_phone_request(message: types.Message, state: FSMContext):
     )
     users_list = ['Рассылка была отправленна']
     for index,user in enumerate(users):
-        if len(user[9]) == 0:
+        if len(user[9]) < 5:
             seconds = user[4]
-            users_list.append(f"{index + 1}.  ️{user[1]}|Ответов {user[2]}/{len(questions)}|Время {seconds // 60} мин. и {seconds % 60} сек.|\n тел. {user[9]}")
+            users_list.append(f"{index + 1}.  ️{user[1]}|Ответов {user[2]}/{len(questions)}|Время {seconds // 60} мин. и {seconds % 60} сек.|\n *тел. {user[9]}*")
             await bot.send_message(chat_id=user[0], text=text, reply_markup=new_keyboard)
     await message.answer('\n'.join(users_list))
 
